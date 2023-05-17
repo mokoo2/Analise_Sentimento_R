@@ -1,0 +1,98 @@
+---
+title: "Análise_de_sentimento"
+output: pdf_document
+---
+
+```{r , include=FALSE}
+options(tinytex.verbose = TRUE)
+```
+Obejetivo: Analisar o sentimento das pessoas sobre um determinado tema, baseado em tweets.
+```{r}
+library(twitteR)
+library(plyr)
+library(stringr)
+library(tm)
+library(sentimentr)
+library(Rstem)
+library(knitr)
+library(httr)
+library(rmarkdown)
+source("utils.R")
+```
+
+Criando autenticação no Twitter.
+```{r}
+key<-"X3tLabKseosq..."
+secret<-"5VsdANG35oBKmrnDd6FTEh..."
+token<-"890217190577897..."
+tokensecret<-"nRrfW2ACMQ2qo7aRg..."
+setup_twitter_oauth(key, secret, token, tokensecret)
+
+```
+
+Definindo as características da busca: palavra a ser encontrada, idioma, número de tweets.
+```{r}
+tema<-"Bolsonaro"
+lingua<-"pt"
+qtd_tweets<-1000
+tweetdata=searchTwitter(tema,n=qtd_tweets,lang=lingua)
+head(tweetdata)
+```
+Tratamento dos dados coletados: limpeza,organização e transformação.
+```{r}
+library(SnowballC)
+tweetlist<-sapply(tweetdata, function(x) x$getText())
+tweetlist<-iconv(tweetlist, to="utf-8", sub="")
+tweetlist<-limpaTweets(tweetlist)
+tweetlist<-gsub("afa","",tweetlist)
+tweetcorpus<-Corpus(VectorSource(tweetlist))
+tweetcorpus<-tm_map(tweetcorpus, removePunctuation)
+tweetcorpus<-tm_map(tweetcorpus, content_transformer(tolower))
+tweetcorpus<-tm_map(tweetcorpus, function(x)removeWords(x, stopwords()))
+```
+Convertendo o objeto Corpus para texto plano.
+```{r}
+termo_por_documento= as.matrix(TermDocumentMatrix(tweetcorpus), control=list(stopwords=c(stopwords("portuguese"))))
+```
+Criando a nuvem de palavras.
+```{r}
+library(RColorBrewer)
+library(wordcloud)
+pal2<-brewer.pal(8, "Dark2")
+wordcloud(tweetcorpus, min.freq = 2, scale=c(5,1)
+          , random.color = F, max.words = 60, random.order = F
+          , colors = pal2)
+```
+Convertendo o objeto texto para o formato de matriz.
+```{r}
+tweettdm<-TermDocumentMatrix(tweetcorpus)
+tweettdm
+```
+Analisando os dados.
+```{r}
+findFreqTerms(tweettdm, lowfreq = 20) #20 palavras mais frequentes
+```
+```{r}
+findAssocs(tweettdm, "reforma", 0.6) #Buscando associação
+```
+Classificando os dados em sentimentos. 
+```{r}
+library(Rstem)
+library(sentiment)
+library(ggplot2)
+class_emo=classify_emotion(tweetlist, algorithm = "bayes", prior=1.0)
+emotion=class_emo[,7]
+emotion[is.na(emotion)]="Neutro"
+class_pol=classify_polarity(tweetlist, algorithm = "bayes")
+polarity=class_pol[,4]
+sent_df=data.frame(text=tweetlist, emotion=emotion, polarity=polarity, stringsAsFactors = F)
+sent_df=within(sent_df, emotion<-factor(emotion, levels=names(sort(table(emotion), decreasing = T))))
+```
+Visualizando por meio de gráficos
+```{r}
+#Emoções encontradas
+ggplot(sent_df, aes(x=emotion))+geom_bar(aes(y=..count..,fill=emotion))+labs(x="categorias", y="número de tweets")
+
+#Polarização
+ggplot(sent_df, aes(x=polarity))+geom_bar(aes(y=..count..,fill=polarity))+labs(x="categorias de sentimento", y="número de tweets")
+```
